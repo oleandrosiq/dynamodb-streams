@@ -1,0 +1,115 @@
+org: mivod
+service: dynamodb-streams
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-east-1
+  architecture: arm64
+  environment:
+    PRODUCTS_TABLE: !Ref ProductsTable
+    PRODUCTS_TABLE_STREAM: !GetAtt ProductsTable.StreamArn
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Scan
+          Resource: !GetAtt ProductsTable.Arn
+
+        - Effect: Allow
+          Action:
+            - dynamodb:DescribeStream
+            - dynamodb:GetRecords
+            - dynamodb:GetShardIterator
+          Resource: !Join ["/", [!GetAtt ProductsTable.Arn, "stream", "*"]]
+
+package:
+  individually: true
+
+esbuild:
+  bundle: true
+  minify: true
+  sourcemap: true
+  external:
+    - "@aws-sdk/*"
+  exclude:
+    - "@aws-sdk/*"
+
+functions:
+  createProduct:
+    handler: src/functions/createProduct.handler
+    events:
+      - httpApi:
+          method: POST
+          path: /products
+  updateProduct:
+    handler: src/functions/updateProduct.handler
+    events:
+      - httpApi:
+          method: PUT
+          path: /products/{productId}
+  deleteProduct:
+    handler: src/functions/deleteProduct.handler
+    events:
+      - httpApi:
+          method: DELETE
+          path: /products/{productId}
+  getProducts:
+    handler: src/functions/getProducts.handler
+    events:
+      - httpApi:
+          method: GET
+          path: /products
+  getShards:
+    handler: src/functions/getShards.handler
+    events:
+      - httpApi:
+          method: GET
+          path: /shards
+  processDDBStream:
+    handler: src/functions/processDDBStream.handler
+    events:
+      - stream:
+          type: dynamodb
+          arn: !GetAtt ProductsTable.StreamArn
+          batchSize: 5
+          maximumRetryAttempts: 3
+          destinations:
+            onFailure:
+              type: sqs
+              arn: !GetAtt DDBStreamsDLQ.Arn
+          # filterPatterns:
+          #  # - eventName:
+          #  #     - INSERT
+          #  #     - MODIFY
+          #  #     - REMOVE
+          #  # - dynamodb:
+          #  #     NewImage:
+          #  #       name:
+          #  #         S:
+          #  #           - equals-ignore-case: "Jaqueta de Couro"
+
+resources:
+  Resources:
+    ProductsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: Products
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+    DDBStreamsDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: DDBStreamsDLQ
+        MessageRetentionPeriod: 1209600 # 14 days in seconds
