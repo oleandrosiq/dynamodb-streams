@@ -1,8 +1,14 @@
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import type { DynamoDBRecord, DynamoDBStreamEvent } from "aws-lambda";
+import { AlgoliaService } from "../service/AlgoliaService";
+import { env } from "../config/env";
 
-// import { productsIndexClient } from "../clients/productsIndexClient";
+const productsIndex = new AlgoliaService(
+  "products",
+  env.ALGOLIA_APP_ID,
+  env.ALGOLIA_API_KEY
+);
 
 export async function handler(event: DynamoDBStreamEvent) {
   await Promise.all(
@@ -19,15 +25,11 @@ export async function handler(event: DynamoDBStreamEvent) {
         >;
         const object = unmarshall(newObject);
 
-        // await productsIndexClient.upsert({
-        //   objectID: object.id,
-        //   ...object,
-        // });
+        await productsIndex.upsert({
+          objectID: object.id,
+          ...object,
+        });
       }
-
-      // if (record.eventName === "REMOVE" && record.dynamodb?.OldImage?.id.S) {
-      //   await productsIndexClient.delete(record.dynamodb.OldImage.id.S);
-      // }
     })
   );
 }
