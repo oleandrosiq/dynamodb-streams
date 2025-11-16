@@ -13,45 +13,79 @@ Este projeto foi desenvolvido para aprender e experimentar com as seguintes tecn
 
 ## 🏗️ Arquitetura
 
-O projeto implementa um sistema de gerenciamento de produtos com sincronização automática para um índice de busca:
+O projeto implementa um sistema completo de gerenciamento de produtos com sincronização em tempo real e busca avançada:
 
 ```
-┌─────────────┐
-│   API HTTP  │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐      ┌──────────────────┐
-│  DynamoDB   │─────▶│ DynamoDB Streams │
-│   Table     │      └────────┬─────────┘
-└─────────────┘               │
-                              ▼
-                     ┌────────────────┐
-                     │  Lambda Stream │
-                     │   Processor    │
-                     └────────┬───────┘
-                              │
-                              ▼
-                        ┌──────────┐
-                        │ Algolia  │
-                        │  Index   │
-                        └──────────┘
+                    ┌─────────────────┐
+                    │   API REST      │
+                    │  (HTTP APIs)    │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+              ▼              ▼              ▼
+         [Create]       [Update]       [Delete]
+         [GetAll]       [GetById]
+              │              │              │
+              └──────────────┼──────────────┘
+                             ▼
+                    ┌─────────────────┐
+                    │   DynamoDB      │
+                    │     Table       │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │ DynamoDB Stream │
+                    │  (CDC Events)   │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │ Lambda Stream   │
+                    │   Processor     │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+         [INSERT]       [MODIFY]       [REMOVE]
+              │              │              │
+              └──────────────┼──────────────┘
+                             ▼
+                    ┌─────────────────┐
+                    │  Algolia Index  │
+                    │  (Search Eng.)  │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │  Search API     │
+                    │  GET /search    │
+                    └─────────────────┘
 ```
 
 ## 📦 Funcionalidades
 
 ### APIs REST
+
+#### Gerenciamento de Produtos (DynamoDB)
 - `POST /products` - Criar um novo produto
 - `PUT /products/{productId}` - Atualizar um produto existente
 - `DELETE /products/{productId}` - Deletar um produto
 - `GET /products` - Listar todos os produtos
+- `GET /products/{id}` - Buscar um produto específico por ID
+
+#### Busca (Algolia)
+- `GET /search/products?query=termo` - Buscar produtos no Algolia usando termo de pesquisa
+
+#### Monitoramento
 - `GET /shards` - Obter informações sobre os shards do stream
 
 ### Processamento de Streams
-- **processDDBStream**: Lambda function que processa eventos do DynamoDB Streams e sincroniza com o Algolia
-  - Detecta inserções e modificações (INSERT/MODIFY)
-  - Detecta remoções (REMOVE)
-  - Atualiza o índice do Algolia automaticamente
+- **processDDBStream**: Lambda function que processa eventos do DynamoDB Streams e sincroniza automaticamente com o Algolia
+  - Detecta inserções e modificações (INSERT/MODIFY) e atualiza o índice do Algolia
+  - Detecta remoções (REMOVE) e remove o produto do índice do Algolia
+  - Mantém o índice de busca sempre sincronizado com o banco de dados
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -67,8 +101,14 @@ O projeto implementa um sistema de gerenciamento de produtos com sincronização
 ### Dependências Principais
 - `@aws-sdk/client-dynamodb` - SDK para interagir com DynamoDB
 - `@aws-sdk/client-dynamodb-streams` - SDK para DynamoDB Streams
-- `algoliasearch` - Cliente para integração com Algolia
+- `algoliasearch` - Cliente oficial do Algolia para integração
 - `zod` - Validação de schemas
+
+### Serviços e Integrações
+- **AlgoliaService**: Classe de serviço que encapsula operações do Algolia
+  - `search(query)`: Busca produtos no índice
+  - `upsert(object)`: Insere ou atualiza um documento
+  - `delete(objectID)`: Remove um documento do índice
 
 ## 🚀 Como Executar
 
@@ -78,6 +118,15 @@ O projeto implementa um sistema de gerenciamento de produtos com sincronização
 - AWS CLI configurado
 - Conta na AWS
 - Conta no Algolia (para search engine)
+
+### Variáveis de Ambiente
+
+Crie um arquivo `.env` baseado no `.env.example`:
+
+```bash
+ALGOLIA_APP_ID=seu_app_id_do_algolia
+ALGOLIA_API_KEY=sua_api_key_do_algolia
+```
 
 ### Instalação
 
@@ -101,24 +150,35 @@ O projeto utiliza o Serverless Framework para gerenciar a infraestrutura como c�
 
 ## 🔄 Como Funciona o DynamoDB Stream
 
-1. Uma operação é realizada na tabela Products (INSERT, MODIFY ou REMOVE)
-2. O DynamoDB Stream captura essa mudança
-3. A Lambda function `processDDBStream` é invocada automaticamente
+1. Uma operação CRUD é realizada na tabela Products (INSERT, MODIFY ou REMOVE)
+2. O DynamoDB Stream captura essa mudança em tempo real
+3. A Lambda function `processDDBStream` é invocada automaticamente com o evento
 4. A função processa o evento e sincroniza com o Algolia:
-   - **INSERT/MODIFY**: Adiciona ou atualiza o produto no índice
-   - **REMOVE**: Remove o produto do índice
+   - **INSERT/MODIFY**: Adiciona ou atualiza o produto no índice do Algolia via `upsert()`
+   - **REMOVE**: Remove o produto do índice do Algolia via `delete()`
+5. O índice de busca fica sempre sincronizado com o banco de dados
+
+### Fluxo de Busca
+
+Quando um usuário realiza uma busca:
+1. Requisição é feita para `GET /search/products?query=termo`
+2. A função `search` consulta diretamente o índice do Algolia (não o DynamoDB)
+3. Resultados são retornados de forma rápida e com suporte a busca avançada
+4. Benefícios: busca full-text, typo tolerance, relevância, e performance otimizada
 
 ## 📚 Aprendizados
 
-Este projeto explora conceitos importantes:
+Este projeto explora conceitos importantes de arquiteturas modernas:
 
-- Event-driven architecture
-- Serverless computing
-- Stream processing
-- Data synchronization
-- Infrastructure as Code (IaC)
-- Dead Letter Queues para tratamento de falhas
-- Retry strategies
+- **Event-driven architecture**: Uso de eventos para propagar mudanças entre sistemas
+- **Serverless computing**: Funções Lambda escaláveis e sem gerenciamento de servidores
+- **Stream processing**: Processamento de eventos em tempo real com DynamoDB Streams
+- **Data synchronization**: Sincronização automática entre DynamoDB e Algolia
+- **Search optimization**: Separação entre banco de dados transacional e sistema de busca
+- **Infrastructure as Code (IaC)**: Gerenciamento de infraestrutura via Serverless Framework
+- **Dead Letter Queues**: Tratamento robusto de falhas no processamento de streams
+- **Retry strategies**: Configuração de tentativas e tolerância a falhas
+- **CDC (Change Data Capture)**: Captura de mudanças de dados para sincronização
 
 ## 📄 Licença
 
