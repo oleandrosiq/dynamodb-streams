@@ -18,10 +18,13 @@ export class AlgoliaService {
 
   // * Search
   async search(query: string) {
-    const { hits } = await this.client.searchSingleIndex({
+    // { nbHits: totalItems, nbPages: totalPages } =  nbHits, nbPages
+    const { hits, nbHits, nbPages } = await this.client.searchSingleIndex({
       indexName: this.indexName,
       searchParams: {
         query,
+        // page: page - 1,
+        // hitsPerPage: 3,
       },
     });
 
