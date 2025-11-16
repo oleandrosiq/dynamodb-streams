@@ -5,6 +5,12 @@ interface IUpsertParams {
   [key: string]: unknown;
 }
 
+interface ISearchParams {
+  query: string;
+  page: number;
+  perPage: number;
+}
+
 export class AlgoliaService {
   private readonly client: Algoliasearch;
 
@@ -17,18 +23,21 @@ export class AlgoliaService {
   }
 
   // * Search
-  async search(query: string) {
-    // { nbHits: totalItems, nbPages: totalPages } =  nbHits, nbPages
+  async search({ query, page, perPage }: ISearchParams) {
     const { hits, nbHits, nbPages } = await this.client.searchSingleIndex({
       indexName: this.indexName,
       searchParams: {
         query,
-        // page: page - 1,
-        // hitsPerPage: 3,
+        page,
+        hitsPerPage: perPage,
       },
     });
 
-    return hits;
+    return {
+      hits,
+      totalItems: nbHits,
+      totalPages: nbPages,
+    };
   }
 
   // * Update or Insert
