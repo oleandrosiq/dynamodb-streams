@@ -76,7 +76,12 @@ O projeto implementa um sistema completo de gerenciamento de produtos com sincro
 - `GET /products/{id}` - Buscar um produto específico por ID
 
 #### Busca (Algolia)
-- `GET /search/products?query=termo` - Buscar produtos no Algolia usando termo de pesquisa
+- `GET /search/products?query=termo&page=1&perPage=10` - Buscar produtos no Algolia usando termo de pesquisa com paginação
+  - **Parâmetros de query**:
+    - `query` (obrigatório): Termo de pesquisa
+    - `page` (opcional): Número da página (padrão: 1, mínimo: 1)
+    - `perPage` (opcional): Itens por página (padrão: 10, mínimo: 1, máximo: 20)
+  - **Resposta**: Retorna `data` (array de produtos), `totalItems` (total de itens encontrados) e `totalPages` (total de páginas)
 
 #### Monitoramento
 - `GET /shards` - Obter informações sobre os shards do stream
@@ -106,7 +111,8 @@ O projeto implementa um sistema completo de gerenciamento de produtos com sincro
 
 ### Serviços e Integrações
 - **AlgoliaService**: Classe de serviço que encapsula operações do Algolia
-  - `search(query)`: Busca produtos no índice
+  - `search({ query, page, perPage })`: Busca produtos no índice com suporte a paginação
+    - Retorna: `{ hits, totalItems, totalPages }`
   - `upsert(object)`: Insere ou atualiza um documento
   - `delete(objectID)`: Remove um documento do índice
 
@@ -161,10 +167,11 @@ O projeto utiliza o Serverless Framework para gerenciar a infraestrutura como c�
 ### Fluxo de Busca
 
 Quando um usuário realiza uma busca:
-1. Requisição é feita para `GET /search/products?query=termo`
-2. A função `search` consulta diretamente o índice do Algolia (não o DynamoDB)
-3. Resultados são retornados de forma rápida e com suporte a busca avançada
-4. Benefícios: busca full-text, typo tolerance, relevância, e performance otimizada
+1. Requisição é feita para `GET /search/products?query=termo&page=1&perPage=10`
+2. A função `search` valida os parâmetros (query, page, perPage) usando Zod
+3. A consulta é feita diretamente no índice do Algolia (não no DynamoDB)
+4. Resultados são retornados com paginação: `data` (produtos), `totalItems` e `totalPages`
+5. Benefícios: busca full-text, typo tolerance, relevância, performance otimizada e navegação por páginas
 
 ## 📚 Aprendizados
 
