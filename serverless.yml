@@ -20,6 +20,7 @@ provider:
             - dynamodb:UpdateItem
             - dynamodb:DeleteItem
             - dynamodb:Scan
+            - dynamodb:GetItem
           Resource: !GetAtt ProductsTable.Arn
 
         - Effect: Allow
@@ -66,6 +67,18 @@ functions:
       - httpApi:
           method: GET
           path: /products
+  getProduct:
+    handler: src/functions/getProduct.handler
+    events:
+      - httpApi:
+          method: GET
+          path: /products/{id}
+  search:
+    handler: src/functions/search.handler
+    events:
+      - httpApi:
+          method: GET
+          path: /search/products
   getShards:
     handler: src/functions/getShards.handler
     events:
